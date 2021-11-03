@@ -3,7 +3,7 @@ use near_sdk::collections::UnorderedMap;
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    ext_contract, log, AccountId, Balance, CryptoHash, PromiseError, PromiseOrValue, PromiseResult,
+    ext_contract, log, AccountId, Balance, CryptoHash, PromiseError, PromiseOrValue,
     Timestamp,
 };
 
@@ -79,6 +79,7 @@ pub struct SaleInput {
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct SaleOutput {
+    pub sale_id: u128,
     pub metadata: SaleMetadata,
     pub staking_contracts: Vec<AccountId>,
     pub min_near_deposit: U128,
@@ -120,6 +121,7 @@ pub struct Sale {
 
     pub collected_amount: Balance,
     pub account_sales: UnorderedMap<AccountId, VSaleAccount>,
+    pub sale_id: Balance,
 }
 
 impl From<VSale> for Sale {
@@ -134,6 +136,7 @@ impl From<VSale> for SaleOutput {
     fn from(v_sale: VSale) -> Self {
         match v_sale {
             VSale::Current(sale) => SaleOutput {
+                sale_id: sale.sale_id,
                 metadata: sale.metadata,
                 staking_contracts: sale.staking_contracts,
                 min_near_deposit: U128(sale.min_near_deposit),
@@ -157,6 +160,7 @@ impl From<VSale> for SaleOutput {
 impl VSale {
     pub fn new(sale_id: u64, sale_input: SaleInput) -> Self {
         Self::Current(Sale {
+            sale_id: sale_id.into(),
             metadata: sale_input.metadata,
             staking_contracts: sale_input.staking_contracts,
             min_near_deposit: sale_input.min_near_deposit.0,
