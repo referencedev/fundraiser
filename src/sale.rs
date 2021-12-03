@@ -813,7 +813,7 @@ impl Contract {
             timestamp >= sale.start_date && timestamp <= sale.end_date,
             "ERR_SALE_IS_ACTIVE"
         );
-        sale.price = Some(price);
+        sale.price = price;
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
 
