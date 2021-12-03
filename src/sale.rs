@@ -811,7 +811,7 @@ impl Contract {
         assert!(!sale.claim_begun, "ERR_CLAIM_ALREADY_BEGUN");
         let timestamp = env::block_timestamp();
         assert!(
-            timestamp >= sale.start_date && timestamp <= sale.end_date,
+            timestamp < sale.start_date || timestamp > sale.end_date,
             "ERR_SALE_IS_ACTIVE"
         );
         sale.price = price.0;
