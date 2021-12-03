@@ -810,7 +810,7 @@ impl Contract {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         let timestamp = env::block_timestamp();
         assert!(
-            timestamp <= sale.start_date || timestamp >= sale.end_date,
+            timestamp < sale.start_date || timestamp > sale.end_date,
             "ERR_SALE_IS_ACTIVE"
         );
         sale.price = price.0;
