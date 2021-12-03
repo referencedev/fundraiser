@@ -29,7 +29,6 @@ const CREATE_ACCOUNT_AMOUNT: Balance = ONE_NEAR / 100;
 const REFERRAL_FEE_DENOMINATOR: u128 = 10000;
 const NEAR_ACCOUNT: &str = "near";
 const WRAP_NEAR_ACCOUNT: &str = "wrap.near";
-const DISABLE_CLAIM_DURING_SALE: bool = false; /// TODO mostly for debug, remove
 
 
 #[ext_contract(ext_self)]
@@ -308,7 +307,7 @@ impl Contract {
                 })
             };
 
-        affiliates_on_level.insert(&affiliate_account_id);
+        affiliates_on_level.insert(affiliate_account_id);
         referrer_account.affiliates.insert(&level, &affiliates_on_level);
 
         self.accounts.insert(referrer_id, &VAccount::Current(referrer_account));

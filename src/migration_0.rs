@@ -44,7 +44,7 @@ impl Contract {
                 .collect();
 
         for account_id in account_ids {
-            let account_old: AccountOld = self.accounts_old.get(&account_id).unwrap().into();
+            let account_old: AccountOld = self.accounts_old.get(&account_id).unwrap();
             let account = Account {
                 referrer: account_old.referrer,
                 links: account_old.links,

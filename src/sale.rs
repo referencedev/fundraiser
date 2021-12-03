@@ -118,6 +118,7 @@ pub struct SaleOutput {
     pub collected_amount: U128,
     pub num_account_sales: u64,
     pub sale_type: SaleType,
+    pub claim_begun: bool
 }
 
 /// Sale information.
@@ -170,7 +171,7 @@ pub struct Sale {
     pub distribute_supply_amount: Option<Balance>,
     pub min_buy: Balance,
     pub max_buy: Balance,
-    // target_amount
+    /// target_amount
     pub max_amount: Balance,
     pub hard_max_amount_limit: bool,
     pub start_date: Timestamp,
@@ -182,7 +183,8 @@ pub struct Sale {
     pub collected_amount: Balance,
     pub account_sales: UnorderedMap<AccountId, VSaleAccount>,
     pub account_affiliate_rewards: UnorderedMap<AccountId, VAffiliateRewardAccount>,
-    pub sale_type: SaleType
+    pub sale_type: SaleType,
+    pub claim_begun: bool
 }
 
 impl From<VSale> for Sale {
@@ -211,6 +213,7 @@ impl From<VSale> for Sale {
                 account_sales: sale.account_sales,
                 account_affiliate_rewards: UnorderedMap::new(StorageKey::AccountAffiliateRewards { sale_id: 0 }),
                 sale_type: SaleType::ByAmount,
+                claim_begun: false,
             },
             VSale::Current(sale) => sale,
         }
@@ -243,6 +246,7 @@ impl From<VSale> for SaleOutput {
                 collected_amount: U128(sale.collected_amount),
                 num_account_sales: sale.account_sales.keys_as_vector().len(),
                 sale_type: SaleType::ByAmount,
+                claim_begun: false
             },
             VSale::Current(sale) => SaleOutput {
                 sale_id: None,
@@ -267,6 +271,7 @@ impl From<VSale> for SaleOutput {
                 collected_amount: U128(sale.collected_amount),
                 num_account_sales: sale.account_sales.keys_as_vector().len(),
                 sale_type: sale.sale_type,
+                claim_begun: sale.claim_begun
             },
         }
     }
@@ -305,7 +310,8 @@ impl VSale {
             collected_amount: 0,
             account_sales: UnorderedMap::new(StorageKey::AccountSales { sale_id }),
             account_affiliate_rewards: UnorderedMap::new(StorageKey::AccountAffiliateRewards { sale_id }),
-            sale_type: sale_input.sale_type
+            sale_type: sale_input.sale_type,
+            claim_begun: false
         })
     }
 }
@@ -405,7 +411,7 @@ impl Contract {
         };
         let mut account_sale = sale
             .account_sales
-            .get(&sender_id)
+            .get(sender_id)
             .map(|account_sale| account_sale.into())
             .unwrap_or(SaleAccount {
                 amount: U128(0),
@@ -421,7 +427,7 @@ impl Contract {
         );
 
         let fees = self.referral_fees.clone();
-        if let Some(referrer_v_account_1) = self.accounts.get(&sender_id) {
+        if let Some(referrer_v_account_1) = self.accounts.get(sender_id) {
             let referrer_account_1: Account = referrer_v_account_1.into();
             let reward_1 = deposit_amount * fees[0] as u128 / REFERRAL_FEE_DENOMINATOR;
             self.internal_insert_affiliate(&mut sale, &referrer_account_1.referrer, reward_1);
@@ -437,7 +443,7 @@ impl Contract {
             }
         }
 
-        sale.account_sales.insert(&sender_id, &VSaleAccount::Current(account_sale));
+        sale.account_sales.insert(sender_id, &VSaleAccount::Current(account_sale));
         sale.collected_amount += deposit_amount;
         self.sales.insert(&sale_id, &VSale::Current(sale));
         amount - deposit_amount
@@ -456,7 +462,7 @@ impl Contract {
                 }
             };
 
-        sale.account_affiliate_rewards.insert(&account_id, &VAffiliateRewardAccount::Current(account_affiliate_reward));
+        sale.account_affiliate_rewards.insert(account_id, &VAffiliateRewardAccount::Current(account_affiliate_reward));
     }
 
     pub(crate) fn internal_finalize_near_deposit(
@@ -597,10 +603,8 @@ impl Contract {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.claim_available, "ERR_CLAIM_NOT_AVAILABLE");
         assert_ne!(sale.price, 0, "ERR_NO_SALE_PRICE");
+        assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
 
-        if DISABLE_CLAIM_DURING_SALE {
-            assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
-        }
 
         let distribute_token_id = sale.distribute_token_id.clone().expect("ERR_NO_TOKEN_ID");
 
@@ -614,9 +618,12 @@ impl Contract {
             assert_eq!(account_sale.claimed.0, 0, "ERR_ALREADY_CLAIMED");
 
             let amount_to_claim = account_sale.amount_to_claim;
-
             assert_ne!(amount_to_claim.0, 0, "ERR_NOTHING_TO_CLAIM");
             account_sale.claimed = amount_to_claim;
+
+            if !sale.claim_begun {
+                sale.claim_begun = true;
+            }
 
             log!("Amount to claim: {}", amount_to_claim.0);
 
@@ -637,10 +644,7 @@ impl Contract {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.sale_type == SaleType::BySubscription, "ERR_REFUND_NOT_ALLOWED");
         assert!(sale.refund_available, "ERR_REFUND_NOT_AVAILABLE");
-
-        if DISABLE_CLAIM_DURING_SALE {
-            assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
-        }
+        assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
 
         let account_id = env::predecessor_account_id();
 
@@ -678,12 +682,8 @@ impl Contract {
         let account_id = env::predecessor_account_id();
 
         assert!(sale.refund_available, "ERR_NOT_AVAILABLE");
-
         assert!(sale.sale_type == SaleType::BySubscription && sale.max_amount < sale.collected_amount, "SALE_BY_SUBSCRIPTION_FAILED");
-
-        if DISABLE_CLAIM_DURING_SALE {
-            assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
-        }
+        assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
 
         if let Some(v_sale_account) = sale.account_affiliate_rewards.get(&account_id) {
             let mut account_affiliate_reward: AffiliateRewardAccount = v_sale_account.into();
@@ -804,10 +804,11 @@ impl Contract {
         sale.distribute_token_id = Some(distribute_token_id);
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
-    
+
     #[private]
     pub fn update_sale_price(&mut self, sale_id: u64, price: U128) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
+        assert!(!sale.claim_begun, "ERR_CLAIM_ALREADY_BEGUN");
         let timestamp = env::block_timestamp();
         assert!(
             timestamp >= sale.start_date && timestamp <= sale.end_date,
