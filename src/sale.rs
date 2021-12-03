@@ -804,6 +804,18 @@ impl Contract {
         sale.distribute_token_id = Some(distribute_token_id);
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
+    
+    #[private]
+    pub fn update_sale_price(&mut self, sale_id: u64, price: U128) {
+        let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
+        let timestamp = env::block_timestamp();
+        assert!(
+            timestamp >= sale.start_date && timestamp <= sale.end_date,
+            "ERR_SALE_IS_ACTIVE"
+        );
+        sale.price = price.0;
+        self.sales.insert(&sale_id, &VSale::Current(sale));
+    }
 
     #[private]
     pub fn update_sale_distribute_token_decimals(&mut self, sale_id: u64, distribute_token_decimals: u8) {
