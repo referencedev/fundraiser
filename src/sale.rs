@@ -806,7 +806,7 @@ impl Contract {
     }
     
     #[private]
-    pub fn update_sale_price(&mut self, sale_id: u64, price: U128) {
+    pub fn update_sale_price(&mut self, sale_id: u64, price: u128) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         let timestamp = env::block_timestamp();
         assert!(
