@@ -799,11 +799,12 @@ impl Contract {
     }
 
     #[private]
-    pub fn update_sale_claim_available(&mut self, sale_id: u64, claim_available: bool) {
+    pub fn update_sale_claim_available(&mut self, sale_id: u64, claim_available: bool, refund_available: bool) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.distribute_token_id.is_some(), "ERR_NO_TOKEN_ID");
         assert!(sale.distribute_token_decimals.is_some(), "ERR_NO_TOKEN_DECIMALS");
         sale.claim_available = claim_available;
+        sale.refund_available = refund_available;
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
 
