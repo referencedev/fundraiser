@@ -526,7 +526,7 @@ impl Contract {
                         get_amount_to_claim(
                             deposit_amount, 
                             sale.max_amount, 
-                            sale.collected_amount, 
+                            sale.max_amount, 
                             sale.price,
                             _distribute_token_decimals
                         )
@@ -534,7 +534,7 @@ impl Contract {
                         get_amount_to_claim(
                             deposit_amount, 
                             sale.collected_amount, 
-                            sale.collected_amount, 
+                            sale.max_amount, 
                             sale.price,
                             _distribute_token_decimals
                         )
@@ -1071,7 +1071,7 @@ fn get_amount_to_claim(
     distribute_token_decimals: u8
 ) -> u128 {
     (
-        U256::from(distribute_token_decimals) 
+        U256::from(u128::pow(10, distribute_token_decimals as u32))
             * U256::from(client_sum_deposit)
             / U256::from(total_filled_amount)
             * U256::from(target_amount)
