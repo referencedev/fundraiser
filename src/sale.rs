@@ -804,7 +804,7 @@ impl Contract {
     }
 
     #[private]
-    pub fn update_saledistribute_token_decimals_value(&mut self, sale_id: u64, distribute_token_decimals: u8) {
+    pub fn update_sale_distribute_token_decimals(&mut self, sale_id: u64, distribute_token_decimals: u8) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.distribute_token_decimals.is_none(), "ERR_ALREADY_SET");
         sale.distribute_token_decimals = Some(distribute_token_decimals);
