@@ -517,7 +517,7 @@ impl Contract {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
 
         let account_id = env::predecessor_account_id();
-        let _distribute_token_decimals = sale.distribute_token_decimals.expect("ERR_NO_TOKEN_DECIMALS");
+        let distribute_token_decimals_value = sale.distribute_token_decimals.expect("ERR_NO_TOKEN_DECIMALS");
 
         if let Some(v_sale_account) = sale.account_sales.get(&account_id) {
             let mut account_sale: SaleAccount = v_sale_account.into();
@@ -534,7 +534,7 @@ impl Contract {
                             sale.max_amount, 
                             sale.max_amount, 
                             sale.price,
-                            _distribute_token_decimals
+                            distribute_token_decimals_value
                         )
                     } else {
                         get_amount_to_claim(
@@ -542,7 +542,7 @@ impl Contract {
                             sale.collected_amount, 
                             sale.max_amount, 
                             sale.price,
-                            _distribute_token_decimals
+                            distribute_token_decimals_value
                         )
                     }
                 } else {
@@ -557,7 +557,7 @@ impl Contract {
                 let client_purchase_amount: u128 = (
                     U256::from(amount_to_claim)
                         * U256::from(sale.price)
-                        / U256::from(u128::pow(10, _distribute_token_decimals as u32))
+                        / U256::from(u128::pow(10, distribute_token_decimals_value as u32))
                 ).as_u128();
 
                 if account_sale.refund.0 == 0 && deposit_amount > client_purchase_amount {
@@ -651,13 +651,10 @@ impl Contract {
 
     pub fn claim_affiliate_reward(&mut self, sale_id: u64) -> Promise {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
-        let _distribute_token_decimals = sale.distribute_token_decimals.expect("ERR_NO_TOKEN_DECIMALS");
+        let distribute_token_decimals_value = sale.distribute_token_decimals.expect("ERR_NO_TOKEN_DECIMALS");
         let account_id = env::predecessor_account_id();
 
         assert!(sale.refund_available, "ERR_NOT_AVAILABLE");
-
-
-        assert!(sale.sale_type == SaleType::BySubscription, "SALE_BY_SUBSCRIPTION_FAILED");
         assert!(env::block_timestamp() > sale.end_date, "ERR_SALE_IN_PROGRESS");
 
 
@@ -676,7 +673,7 @@ impl Contract {
                         sale.max_amount, 
                         sale.collected_amount, 
                         sale.price,
-                        _distribute_token_decimals
+                        distribute_token_decimals_value
                     )
                 } else {
                     get_amount_to_claim(
@@ -684,7 +681,7 @@ impl Contract {
                         sale.collected_amount, 
                         sale.collected_amount, 
                         sale.price,
-                        _distribute_token_decimals
+                        distribute_token_decimals_value
                     )
                 };
 
@@ -807,7 +804,7 @@ impl Contract {
     }
 
     #[private]
-    pub fn update_sale_distribute_token_decimals(&mut self, sale_id: u64, distribute_token_decimals: u8) {
+    pub fn update_saledistribute_token_decimals_value(&mut self, sale_id: u64, distribute_token_decimals: u8) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.distribute_token_decimals.is_none(), "ERR_ALREADY_SET");
         sale.distribute_token_decimals = Some(distribute_token_decimals);
