@@ -1,18 +1,18 @@
-use near_sdk::{
-    AccountId, Balance, BorshStorageKey, env, ext_contract, Gas, near_bindgen, PanicOnDefault,
-    Promise, PromiseOrValue, PublicKey,
-};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::{
+    env, ext_contract, near_bindgen, AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault,
+    Promise, PromiseOrValue, PublicKey,
+};
 
 use crate::sale::VSale;
 
-mod sale;
-mod token_receiver;
 mod migration_0;
 mod migration_1;
+mod sale;
+mod token_receiver;
 
 pub(crate) const ONE_NEAR: Balance = 10u128.pow(24);
 
@@ -23,13 +23,12 @@ pub(crate) const ON_CREATE_ACCOUNT_GAS: Gas = Gas(4 * BASE_GAS.0);
 const NO_DEPOSIT: Balance = 0;
 const ACCESS_KEY_ALLOWANCE: Balance = ONE_NEAR / 100;
 // AUDIT: This should be more than `ACCESS_KEY_ALLOWANCE` to cover cost of storage for access key + allowance.
-const CREATE_LINK_AMOUNT: Balance = ONE_NEAR / 100;
+const CREATE_LINK_AMOUNT: Balance = 3 * ONE_NEAR / 100;
 const CREATE_ACCOUNT_AMOUNT: Balance = ONE_NEAR / 100;
 
 const REFERRAL_FEE_DENOMINATOR: u128 = 10000;
 const NEAR_ACCOUNT: &str = "near";
 const WRAP_NEAR_ACCOUNT: &str = "wrap.near";
-
 
 #[ext_contract(ext_self)]
 pub trait ExtContract {
@@ -53,19 +52,28 @@ pub trait ExtContract {
     ) -> PromiseOrValue<U128>;
 
     /// Callback after token claim
-    fn after_withdraw_purchase(&mut self,
-                               account_id: AccountId,
-                               amount_to_claim: U128,
-                               sale_id: u64) -> bool;
+    fn after_withdraw_purchase(
+        &mut self,
+        account_id: AccountId,
+        amount_to_claim: U128,
+        sale_id: u64,
+    ) -> bool;
 
     /// Callback after token refund for subscription sales
-    fn after_refund_purchase(&mut self,
-                             account_id: AccountId,
-                             amount_to_refund: U128,
-                             sale_id: u64) -> bool;
+    fn after_refund_purchase(
+        &mut self,
+        account_id: AccountId,
+        amount_to_refund: U128,
+        sale_id: u64,
+    ) -> bool;
 
     /// Callback after affiliate_rewards claim
-    fn after_withdraw_affiliate_reward(&mut self, account_id: AccountId, amount: U128, sale_id: u64) -> bool;
+    fn after_withdraw_affiliate_reward(
+        &mut self,
+        account_id: AccountId,
+        amount: U128,
+        sale_id: u64,
+    ) -> bool;
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -104,8 +112,16 @@ struct AccountOutput {
 impl From<Account> for AccountOutput {
     fn from(account: Account) -> Self {
         let aff_0 = get_affiliates_num(&account, 0);
-        let aff_1 = if aff_0 > 0 { get_affiliates_num(&account, 1) } else { 0 };
-        let aff_2 = if aff_1 > 0 { get_affiliates_num(&account, 2) } else { 0 };
+        let aff_1 = if aff_0 > 0 {
+            get_affiliates_num(&account, 1)
+        } else {
+            0
+        };
+        let aff_2 = if aff_1 > 0 {
+            get_affiliates_num(&account, 2)
+        } else {
+            0
+        };
 
         Self {
             referrer: account.referrer,
@@ -166,10 +182,15 @@ struct Contract {
 
 impl Contract {
     fn internal_remove_link(&mut self, account_id: AccountId, public_key: PublicKey) -> Promise {
-        let mut account: Account = self.accounts.get(&account_id).expect("ERR_NO_ACCOUNT").into();
+        let mut account: Account = self
+            .accounts
+            .get(&account_id)
+            .expect("ERR_NO_ACCOUNT")
+            .into();
         self.links.remove(&public_key);
         account.links.remove(&public_key);
-        self.accounts.insert(&account_id, &VAccount::Current(account));
+        self.accounts
+            .insert(&account_id, &VAccount::Current(account));
         Promise::new(env::current_account_id()).delete_key(public_key)
     }
 }
@@ -262,8 +283,10 @@ impl Contract {
             .links
             .get(&env::signer_account_pk())
             .expect("ERR_NO_LINK");
-        self.accounts
-            .insert(&new_account_id, &VAccount::Current(Account::new(&new_account_id, &referrer)));
+        self.accounts.insert(
+            &new_account_id,
+            &VAccount::Current(Account::new(&new_account_id, &referrer)),
+        );
         // AUDIT: Predecessor here is `env::current_account_id()`, so it's a bug. I guess you can
         // use `referrer` here instead.
         // BEFORE AUDIT: self.internal_remove_link(env::predecessor_account_id(), env::signer_account_pk())
@@ -273,22 +296,26 @@ impl Contract {
     #[payable]
     pub fn join(&mut self, referrer_id: Option<AccountId>) {
         let account_id = env::predecessor_account_id();
-        let referrer_id_unwrapped: AccountId =
-            if let Some(referrer_id_unwrapped) = referrer_id {
-                if self.accounts.get(&referrer_id_unwrapped).is_some() {
-                    referrer_id_unwrapped
-                } else {
-                    self.owner_id.clone()
-                }
+        let referrer_id_unwrapped: AccountId = if let Some(referrer_id_unwrapped) = referrer_id {
+            if self.accounts.get(&referrer_id_unwrapped).is_some() {
+                referrer_id_unwrapped
             } else {
                 self.owner_id.clone()
-            };
+            }
+        } else {
+            self.owner_id.clone()
+        };
 
         assert_ne!(referrer_id_unwrapped, account_id, "SELF_REFERRER");
-        assert!(self.accounts.get(&account_id).is_none(), "ERR_ACCOUNT_EXISTS");
+        assert!(
+            self.accounts.get(&account_id).is_none(),
+            "ERR_ACCOUNT_EXISTS"
+        );
         assert_eq!(env::attached_deposit(), self.join_fee, "ERR_FEE");
-        self.accounts
-            .insert(&account_id, &VAccount::Current(Account::new(&account_id, &referrer_id_unwrapped)));
+        self.accounts.insert(
+            &account_id,
+            &VAccount::Current(Account::new(&account_id, &referrer_id_unwrapped)),
+        );
 
         // Don't save internal affiliates to save storage and gas
         if self.owner_id != referrer_id_unwrapped {
@@ -296,21 +323,31 @@ impl Contract {
         }
     }
 
-    fn insert_affiliate_on_level(&mut self, referrer_id: &AccountId, mut referrer_account: Account, level: u8, affiliate_account_id: &AccountId) {
+    fn insert_affiliate_on_level(
+        &mut self,
+        referrer_id: &AccountId,
+        mut referrer_account: Account,
+        level: u8,
+        affiliate_account_id: &AccountId,
+    ) {
         let mut affiliates_on_level: UnorderedSet<AccountId> =
             if let Some(affiliates_unwrapped) = referrer_account.affiliates.get(&level) {
                 affiliates_unwrapped
             } else {
                 UnorderedSet::new(StorageKey::AffiliateLevels {
+                    // AUDIT: Should be `referrer_id`
                     account_id: affiliate_account_id.clone(),
                     level,
                 })
             };
 
         affiliates_on_level.insert(affiliate_account_id);
-        referrer_account.affiliates.insert(&level, &affiliates_on_level);
+        referrer_account
+            .affiliates
+            .insert(&level, &affiliates_on_level);
 
-        self.accounts.insert(referrer_id, &VAccount::Current(referrer_account));
+        self.accounts
+            .insert(referrer_id, &VAccount::Current(referrer_account));
     }
 
     fn insert_affiliates(&mut self, referrer_1_id: AccountId, account_id: AccountId) {
@@ -319,6 +356,7 @@ impl Contract {
             let referrer_2_id = &referrer_account_1.referrer.clone();
             self.insert_affiliate_on_level(&referrer_1_id, referrer_account_1, 0, &account_id);
 
+            // AUDIT: Verify that referrer_2_id is not owner.
             if let Some(referrer_v_account_2) = self.accounts.get(referrer_2_id) {
                 let referrer_account_2: Account = referrer_v_account_2.into();
                 let referrer_3_id = &referrer_account_2.referrer.clone();
@@ -326,7 +364,12 @@ impl Contract {
 
                 if let Some(referrer_v_account_3) = self.accounts.get(referrer_3_id) {
                     let referrer_account_3: Account = referrer_v_account_3.into();
-                    self.insert_affiliate_on_level(referrer_3_id, referrer_account_3, 2, &account_id);
+                    self.insert_affiliate_on_level(
+                        referrer_3_id,
+                        referrer_account_3,
+                        2,
+                        &account_id,
+                    );
                 }
             }
         }
@@ -341,7 +384,8 @@ impl Contract {
     }
 
     pub fn get_account(&self, account_id: AccountId) -> AccountOutput {
-        let account: Account = self.accounts
+        let account: Account = self
+            .accounts
             .get(&account_id)
             .expect("ERR_ACCOUNT_DOESNT_EXIST")
             .into();
@@ -369,7 +413,11 @@ impl Contract {
     }
 
     pub fn get_links(&self, account_id: AccountId) -> Vec<PublicKey> {
-        let account: Account = self.accounts.get(&account_id).expect("ERR_NO_ACCOUNT").into();
+        let account: Account = self
+            .accounts
+            .get(&account_id)
+            .expect("ERR_NO_ACCOUNT")
+            .into();
         account.links.to_vec()
     }
 }
@@ -379,10 +427,10 @@ mod tests {
     use std::str::FromStr;
 
     use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
-    use near_sdk::{PromiseResult, serde_json, testing_env};
     use near_sdk::json_types::U64;
-    use near_sdk::test_utils::{accounts, testing_env_with_promise_results};
     use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::test_utils::{accounts, testing_env_with_promise_results};
+    use near_sdk::{serde_json, testing_env, PromiseResult};
 
     use crate::sale::{SaleInput, SaleMetadata, SaleType};
     use crate::token_receiver::SaleDeposit;
@@ -411,7 +459,7 @@ mod tests {
                 project_medium: None,
                 project_twitter: None,
                 reward_timestamp: None,
-                reward_description: None
+                reward_description: None,
             },
             staking_contracts: vec![AccountId::new_unchecked("test.staking".to_string())],
             min_near_deposit: U128(100),
@@ -429,7 +477,7 @@ mod tests {
             price: U128(1000),
             whitelist_hash: None,
             limit_per_transaction: U128(100),
-            sale_type: SaleType::ByAmount
+            sale_type: SaleType::ByAmount,
         });
         assert_eq!(contract.get_referral_fees(), referral_fees);
         assert_eq!(contract.get_join_fee(), join_fee);

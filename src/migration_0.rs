@@ -1,7 +1,7 @@
 use near_sdk::log;
 
-use crate::*;
 use crate::sale::*;
+use crate::*;
 
 #[near_bindgen]
 impl Contract {
@@ -36,15 +36,15 @@ impl Contract {
     }
 
     #[private]
-    pub fn migrate_a1(&mut self, limit: u64) { // accounts_old transition
+    pub fn migrate_a1(&mut self, limit: u64) {
+        // accounts_old transition
         let keys = self.accounts_old.keys_as_vector();
-        let account_ids: Vec<AccountId> =
-            (0..std::cmp::min(limit,  keys.len()))
-                .map(|index| keys.get(index).unwrap().into())
-                .collect();
+        let account_ids: Vec<AccountId> = (0..std::cmp::min(limit, keys.len()))
+            .map(|index| keys.get(index).unwrap().into())
+            .collect();
 
         for account_id in account_ids {
-            let account_old: AccountOld = self.accounts_old.get(&account_id).unwrap();
+            let account_old: AccountOld = self.accounts_old.remove(&account_id).unwrap();
             let account = Account {
                 referrer: account_old.referrer,
                 links: account_old.links,
@@ -52,11 +52,10 @@ impl Contract {
                     account_id: account_id.clone(),
                 }),
             };
-            self.accounts.insert(&account_id, &VAccount::Current(account));
-            self.accounts_old.remove(&account_id);
+            self.accounts
+                .insert(&account_id, &VAccount::Current(account));
         }
 
         log!("Pending items: {}", self.accounts_old.len());
     }
-
 }
