@@ -628,7 +628,6 @@ impl Contract {
 
             assert_ne!(account_sale.refund.0, 0, "ERR_NOTHING_TO_REFUND");
             assert_eq!(account_sale.refunded.0, 0, "ERR_ALREADY_REFUNDED");
-            assert_ne!(account_sale.claimed.0, 0, "ERR_MUST_CLAIM_BEFORE_REFUND");
 
             let amount_to_refund: U128 = account_sale.refund;
             account_sale.refunded = amount_to_refund;
