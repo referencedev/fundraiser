@@ -352,7 +352,6 @@ mod tests {
             claim_available: true,
             distribute_token_id: None,
             distribute_token_decimals: None,
-            distribute_supply_amount: None,
             min_buy: U128(100),
             max_buy: U128(10000),
             max_amount: max_amount.map(|a| U128(a)),
