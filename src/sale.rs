@@ -397,7 +397,7 @@ impl Contract {
             .account_sales
             .get(sender_id)
             .map(|account_sale| account_sale.into())
-            .unwrap_or(SaleAccount {
+            .unwrap_or_else(|| SaleAccount {
                 amount: U128(0),
                 amount_to_claim: U128(0),
                 claimed: U128(0),
@@ -550,23 +550,24 @@ impl Contract {
             let deposit_amount = account_sale.amount.0;
 
             let amount_to_claim: u128 = if account_sale.claimed.0 == 0 {
-                    if sale.collected_amount <= sale.max_amount || sale.sale_type == SaleType::ByAmount {
-                        get_amount_to_claim(
-                            deposit_amount, 
-                            sale.max_amount, 
-                            sale.max_amount, 
-                            sale.price,
-                            distribute_token_decimals_value
-                        )
-                    } else {
-                        get_amount_to_claim(
-                            deposit_amount, 
-                            sale.collected_amount, 
-                            sale.max_amount, 
-                            sale.price,
-                            distribute_token_decimals_value
-                        )
-                    }
+                if sale.collected_amount <= sale.max_amount || sale.sale_type == SaleType::ByAmount
+                {
+                    get_amount_to_claim(
+                        deposit_amount,
+                        sale.max_amount,
+                        sale.max_amount,
+                        sale.price,
+                        distribute_token_decimals_value,
+                    )
+                } else {
+                    get_amount_to_claim(
+                        deposit_amount,
+                        sale.collected_amount,
+                        sale.max_amount,
+                        sale.price,
+                        distribute_token_decimals_value,
+                    )
+                }
             } else {
                 account_sale.claimed.0
             };
@@ -689,25 +690,25 @@ impl Contract {
 
             let deposit_amount = account_affiliate_reward.amount.0;
 
-            let amount_to_claim: u128 = 
-            if sale.collected_amount <= sale.max_amount || sale.sale_type == SaleType::ByAmount {
+            let amount_to_claim: u128 = if sale.collected_amount <= sale.max_amount
+                || sale.sale_type == SaleType::ByAmount
+            {
                 get_amount_to_claim(
-                    deposit_amount, 
-                    sale.max_amount, 
-                    sale.collected_amount, 
+                    deposit_amount,
+                    sale.max_amount,
+                    sale.collected_amount,
                     sale.price,
-                    distribute_token_decimals_value
+                    distribute_token_decimals_value,
                 )
             } else {
                 get_amount_to_claim(
-                    deposit_amount, 
-                    sale.collected_amount, 
-                    sale.collected_amount, 
+                    deposit_amount,
+                    sale.collected_amount,
+                    sale.collected_amount,
                     sale.price,
-                    distribute_token_decimals_value
+                    distribute_token_decimals_value,
                 )
             };
-
 
             assert_ne!(amount_to_claim, 0, "ERR_NOTHING_TO_CLAIM");
             log!("Amount to claim: {}", amount_to_claim);
@@ -839,7 +840,10 @@ impl Contract {
     pub fn update_sale_claim_available(&mut self, sale_id: u64, claim_available: bool) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.distribute_token_id.is_some(), "ERR_NO_TOKEN_ID");
-        assert!(sale.distribute_token_decimals.is_some(), "ERR_NO_TOKEN_DECIMALS");
+        assert!(
+            sale.distribute_token_decimals.is_some(),
+            "ERR_NO_TOKEN_DECIMALS"
+        );
         sale.claim_available = claim_available;
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
@@ -848,7 +852,10 @@ impl Contract {
     pub fn update_sale_refund_available(&mut self, sale_id: u64, refund_available: bool) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(sale.distribute_token_id.is_some(), "ERR_NO_TOKEN_ID");
-        assert!(sale.distribute_token_decimals.is_some(), "ERR_NO_TOKEN_DECIMALS");
+        assert!(
+            sale.distribute_token_decimals.is_some(),
+            "ERR_NO_TOKEN_DECIMALS"
+        );
         sale.refund_available = refund_available;
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
@@ -1136,18 +1143,17 @@ fn is_promise_success() -> bool {
 }
 
 fn get_amount_to_claim(
-    client_sum_deposit: Balance, 
-    total_filled_amount: Balance, 
-    target_amount: Balance, 
+    client_sum_deposit: Balance,
+    total_filled_amount: Balance,
+    target_amount: Balance,
     price: Balance,
-    distribute_token_decimals: u8
+    distribute_token_decimals: u8,
 ) -> u128 {
-    (U256::from(u128::pow(10, distribute_token_decimals as u32))
-        * U256::from(client_sum_deposit)
+    (U256::from(u128::pow(10, distribute_token_decimals as u32)) * U256::from(client_sum_deposit)
         / U256::from(total_filled_amount)
         * U256::from(target_amount)
         / U256::from(price))
-        .as_u128()
+    .as_u128()
 }
 
 fn internal_get_affiliates_vector(
