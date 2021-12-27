@@ -144,7 +144,7 @@ pub struct SaleOld {
     pub deposit_token_id: AccountId,
     pub min_buy: Balance,
     pub max_buy: Balance,
-    pub max_amount: Balance,
+    pub max_amount: Option<Balance>,
     pub hard_max_amount_limit: bool,
     pub start_date: Timestamp,
     pub end_date: Timestamp,
@@ -198,7 +198,7 @@ impl From<VSale> for Sale {
                 distribute_token_decimals: None,
                 min_buy: sale.min_buy,
                 max_buy: sale.max_buy,
-                max_amount: sale.max_amount,
+                max_amount: sale.max_amount.unwrap_or_default(),
                 hard_max_amount_limit: sale.hard_max_amount_limit,
                 start_date: sale.start_date,
                 end_date: sale.end_date,
@@ -233,7 +233,7 @@ impl From<VSale> for SaleOutput {
                 distribute_token_decimals: None,
                 min_buy: U128(sale.min_buy),
                 max_buy: U128(sale.max_buy),
-                max_amount: U128(sale.max_amount),
+                max_amount: U128(sale.max_amount.unwrap_or_default()),
                 hard_max_amount_limit: sale.hard_max_amount_limit,
                 start_date: U64(sale.start_date),
                 end_date: U64(sale.end_date),
@@ -336,7 +336,6 @@ pub struct SaleAccount {
 impl From<VSaleAccount> for SaleAccount {
     fn from(v_account_sale: VSaleAccount) -> Self {
         match v_account_sale {
-            VSaleAccount::Current(account_sale) => account_sale,
             VSaleAccount::First(account_sale) => SaleAccount {
                 amount: account_sale.amount,
                 amount_to_claim: U128(0),
@@ -344,6 +343,7 @@ impl From<VSaleAccount> for SaleAccount {
                 refund: U128(0),
                 refunded: U128(0),
             },
+            VSaleAccount::Current(account_sale) => account_sale,
         }
     }
 }
