@@ -62,10 +62,6 @@ pub struct SaleInput {
     pub min_near_deposit: U128,
     /// Token to sell for.
     pub deposit_token_id: AccountId,
-    /// Is claim available?
-    pub claim_available: bool,
-    /// Is refund available
-    pub refund_available: bool,
     /// Token for sale
     pub distribute_token_id: Option<AccountId>,
     /// Number of decimals of token for sale, used to calculate purchase amount
@@ -76,9 +72,6 @@ pub struct SaleInput {
     pub max_buy: U128,
     /// Maximum amount that can be collected by the sale. A.k.a. target_amount
     pub max_amount: U128,
-    /// Max amount is hard requirement or not.
-    /// If true, max_amount must be provided.
-    pub hard_max_amount_limit: bool,
     /// Start date of the sale.
     pub start_date: U64,
     /// End date of the sale.
@@ -108,7 +101,6 @@ pub struct SaleOutput {
     pub min_buy: U128,
     pub max_buy: U128,
     pub max_amount: U128,
-    pub hard_max_amount_limit: bool,
     pub start_date: U64,
     pub end_date: U64,
     pub price: U128,
@@ -170,6 +162,9 @@ pub struct Sale {
     pub max_buy: Balance,
     /// target_amount
     pub max_amount: Balance,
+    #[deprecated(
+        note = "hard_max_amount_limit was rarely used. Users should instead use sale_type"
+    )]
     pub hard_max_amount_limit: bool,
     pub start_date: Timestamp,
     pub end_date: Timestamp,
@@ -234,7 +229,6 @@ impl From<VSale> for SaleOutput {
                 min_buy: U128(sale.min_buy),
                 max_buy: U128(sale.max_buy),
                 max_amount: U128(sale.max_amount.unwrap_or_default()),
-                hard_max_amount_limit: sale.hard_max_amount_limit,
                 start_date: U64(sale.start_date),
                 end_date: U64(sale.end_date),
                 price: U128(sale.price),
@@ -258,7 +252,6 @@ impl From<VSale> for SaleOutput {
                 min_buy: U128(sale.min_buy),
                 max_buy: U128(sale.max_buy),
                 max_amount: U128(sale.max_amount),
-                hard_max_amount_limit: sale.hard_max_amount_limit,
                 start_date: U64(sale.start_date),
                 end_date: U64(sale.end_date),
                 price: U128(sale.price),
@@ -280,14 +273,14 @@ impl VSale {
             staking_contracts: sale_input.staking_contracts,
             min_near_deposit: sale_input.min_near_deposit.0,
             deposit_token_id: sale_input.deposit_token_id,
-            claim_available: sale_input.claim_available,
-            refund_available: sale_input.refund_available,
+            claim_available: false,
+            refund_available: false,
             distribute_token_id: sale_input.distribute_token_id,
             distribute_token_decimals: sale_input.distribute_token_decimals,
             min_buy: sale_input.min_buy.0,
             max_buy: sale_input.max_buy.0,
             max_amount: sale_input.max_amount.0,
-            hard_max_amount_limit: sale_input.hard_max_amount_limit,
+            hard_max_amount_limit: sale_input.sale_type == SaleType::ByAmount,
             start_date: sale_input.start_date.0,
             end_date: sale_input.end_date.0,
             price: sale_input.price.0,
@@ -388,7 +381,7 @@ impl Contract {
             "ERR_NOT_ENOUGH_STAKED"
         );
         // TODO: add check for the whitelist hash.
-        let deposit_amount = if !sale.hard_max_amount_limit {
+        let deposit_amount = if sale.sale_type == SaleType::BySubscription {
             amount
         } else {
             std::cmp::min(amount, sale.max_amount - sale.collected_amount)
@@ -751,17 +744,18 @@ impl Contract {
         }
     }
 
-    pub fn create_sale(&mut self, sale: SaleInput) -> u64 {
-        assert_eq!(
-            self.owner_id,
-            env::predecessor_account_id(),
-            "ERR_MUST_BE_OWNER"
-        );
-
-        assert!(
-            !sale.hard_max_amount_limit || (sale.hard_max_amount_limit && sale.max_amount.0 > 0),
-            "ERR_MUST_HAVE_MAX_AMOUNT"
-        );
+    fn check_input_sale(sale: &SaleInput) {
+        if sale.sale_type == SaleType::ByAmount {
+            assert!(sale.max_amount.0 > 0, "ERR_MUST_HAVE_MAX_AMOUNT");
+            assert!(
+                sale.max_buy.0 <= sale.max_amount.0,
+                "MAX_BUY_IS_GREATER_THAN_MAX_AMOUNT"
+            );
+            assert!(
+                sale.limit_per_transaction.0 <= sale.max_amount.0,
+                "LIMIT_PER_TRANSACTION_IS_TO_BIG"
+            );
+        }
 
         assert!(
             sale.distribute_token_decimals
@@ -770,6 +764,47 @@ impl Contract {
             "WRONG_DECIMALS"
         );
 
+        assert!(
+            sale.start_date.0 > 1_000_000_000_000_000_000,
+            "START_DATE_IS_TO_SMALL"
+        );
+        assert!(
+            sale.start_date.0 < 10_000_000_000_000_000_000,
+            "START_DATE_IS_TO_BIG"
+        );
+        assert!(
+            sale.end_date.0 > 1_000_000_000_000_000_000,
+            "END_DATE_IS_TO_SMALL"
+        );
+        assert!(
+            sale.end_date.0 < 10_000_000_000_000_000_000,
+            "END_DATE_IS_TO_BIG"
+        );
+        assert!(sale.start_date.0 < sale.end_date.0, "WRONG_DATES");
+
+        assert!(
+            sale.min_buy.0 <= sale.max_buy.0,
+            "MAX_BUY_IS_LESS_THAN_MIN_BUY"
+        );
+        assert!(
+            sale.limit_per_transaction.0 >= sale.min_buy.0,
+            "LIMIT_PER_TRANSACTION_IS_TO_SMALL"
+        );
+
+        if sale.min_near_deposit.0 == 0 {
+            assert!(sale.staking_contracts.is_empty(), "WRONG_MIN_NEAR_DEPOSIT");
+        } else {
+            assert!(!sale.staking_contracts.is_empty(), "NO_STAKING_CONTRACTS");
+        }
+    }
+
+    pub fn create_sale(&mut self, sale: SaleInput) -> u64 {
+        assert_eq!(
+            self.owner_id,
+            env::predecessor_account_id(),
+            "ERR_MUST_BE_OWNER"
+        );
+        Self::check_input_sale(&sale);
         self.sales
             .insert(&self.num_sales, &VSale::new(self.num_sales, sale));
         let sale_id = self.num_sales;
@@ -812,7 +847,7 @@ impl Contract {
     }
 
     #[private]
-    pub fn update_sale_price(&mut self, sale_id: u64, price: U128) {
+    pub fn update_sale_price(&mut self, sale_id: u64, price: U128, max_amount: U128) {
         let mut sale: Sale = self.sales.get(&sale_id).expect("ERR_NO_SALE").into();
         assert!(!sale.claim_begun, "ERR_CLAIM_ALREADY_BEGUN");
         let timestamp = env::block_timestamp();
@@ -821,6 +856,7 @@ impl Contract {
             "ERR_SALE_IS_ACTIVE"
         );
         sale.price = price.0;
+        sale.max_amount = max_amount.0;
         self.sales.insert(&sale_id, &VSale::Current(sale));
     }
 

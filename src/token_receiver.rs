@@ -5,6 +5,7 @@ use near_sdk::{env, ext_contract, serde_json};
 use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
 
 use crate::sale::Sale;
+use crate::sale::SaleType;
 use crate::*;
 
 const GAS_GET_ACCOUNT_STAKED_BALANCE: Gas = Gas(25_000_000_000_000);
@@ -44,7 +45,7 @@ impl Contract {
             .expect("ERR_NO_SALE")
             .into();
         assert_eq!(sale.deposit_token_id, token_id, "ERR_WRONG_TOKEN");
-        if sale.hard_max_amount_limit {
+        if sale.sale_type == SaleType::ByAmount{
             assert!(
                 sale.collected_amount < sale.max_amount,
                 "ERR_SALE_DONE"
