@@ -10,7 +10,7 @@ use near_sdk::{
 use crate::sale::VSale;
 
 mod migration_0;
-mod migration_1;
+//mod migration_1;
 mod sale;
 mod token_receiver;
 
@@ -309,15 +309,13 @@ impl Contract {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use near_contract_standards::fungible_token::receiver::FungibleTokenReceiver;
     use near_sdk::json_types::U64;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::test_utils::{accounts, testing_env_with_promise_results};
     use near_sdk::{serde_json, testing_env, PromiseResult};
 
-    use crate::sale::{SaleInput, SaleMetadata, SaleType};
+    use crate::sale::{Sale, SaleInput, SaleMetadata, SaleType};
     use crate::token_receiver::SaleDeposit;
 
     use super::*;
@@ -349,18 +347,16 @@ mod tests {
             staking_contracts: vec![AccountId::new_unchecked("test.staking".to_string())],
             min_near_deposit: U128(100),
             deposit_token_id: accounts(1),
-            claim_available: true,
             distribute_token_id: None,
-            distribute_token_decimals: None,
-            min_buy: U128(100),
-            max_buy: U128(10000),
-            max_amount: max_amount.map(|a| U128(a)),
-            hard_max_amount_limit: max_amount.is_some(),
+            distribute_token_decimals: Some(8),
+            min_buy: U128(10),
+            max_buy: U128(max_amount),
+            max_amount: U128(max_amount), //.map(|a| U128(a)),
             start_date: U64(start_date),
             end_date: U64(end_date),
             price: U128(1000),
             whitelist_hash: None,
-            limit_per_transaction: U128(100),
+            limit_per_transaction: U128(max_amount),
             sale_type: SaleType::ByAmount,
         });
         assert_eq!(contract.get_referral_fees(), referral_fees);
@@ -369,7 +365,47 @@ mod tests {
     }
 
     fn contract_with_sale() -> (VMContextBuilder, Contract) {
-        contract_with_sale_info(Some(10000), 0, 1_000_000_000)
+        contract_with_sale_info(10000, 1_000_000_000_000_100_000, 9_999_999_999_500_000_000)
+    }
+
+    fn correct_input_sale() -> SaleInput {
+        SaleInput {
+            metadata: SaleMetadata {
+                name: "test".to_string(),
+                symbol: "TEST".to_string(),
+                description: "".to_string(),
+
+                smart_contract_url: "".to_string(),
+                logo_url: "".to_string(),
+                output_ticker: "".to_string(),
+                project_telegram: None,
+                project_medium: None,
+                project_twitter: None,
+                reward_timestamp: None,
+                reward_description: None,
+            },
+            staking_contracts: vec![AccountId::new_unchecked("test.staking".to_string())],
+            min_near_deposit: U128(100),
+            deposit_token_id: accounts(1),
+            distribute_token_id: None,
+            distribute_token_decimals: Some(8),
+            min_buy: U128(10),
+            max_buy: U128(100),
+            max_amount: U128(1000),
+            start_date: U64(1_000_000_000_100_000_000),
+            end_date: U64(1_000_000_000_200_000_000),
+            price: U128(1000),
+            whitelist_hash: None,
+            limit_per_transaction: U128(100),
+            sale_type: SaleType::ByAmount,
+        }
+    }
+
+    fn contract_without_sale() -> Contract {
+        let mut context = VMContextBuilder::new();
+        testing_env!(context.predecessor_account_id(accounts(0)).build());
+        let contract = Contract::new(accounts(0), U128(1_000_000), vec![10, 20, 30]);
+        contract
     }
 
     fn register_account(
@@ -381,7 +417,7 @@ mod tests {
             .predecessor_account_id(account_id)
             .attached_deposit(1000000)
             .build());
-        contract.join();
+        contract.join(None);
     }
 
     fn deposit(context: &mut VMContextBuilder, contract: &mut Contract, account_id: AccountId) {
@@ -407,11 +443,13 @@ mod tests {
         testing_env!(context
             .predecessor_account_id(accounts(2))
             .attached_deposit(1000000)
+            .block_timestamp(1_000_000_000_600_000_000)
             .build());
-        contract.join();
+        contract.join(None);
         assert_eq!(contract.get_account(accounts(2)).referrer, accounts(0));
 
         testing_env!(context.predecessor_account_id(accounts(1)).build());
+        println!("timestamp = {:?}", context.build().block_timestamp);
         contract.ft_on_transfer(
             accounts(2),
             U128(100),
@@ -463,7 +501,7 @@ mod tests {
             .predecessor_account_id(accounts(2))
             .attached_deposit(1000000)
             .build());
-        contract.join();
+        contract.join(None);
         testing_env!(context.predecessor_account_id(accounts(1)).build());
         contract.ft_on_transfer(
             accounts(2),
@@ -477,26 +515,10 @@ mod tests {
     }
 
     #[test]
-    fn test_create_remove_link() {
-        let (mut context, mut contract) = contract_with_sale();
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(1000000)
-            .build());
-        contract.join();
-        testing_env!(context
-            .predecessor_account_id(accounts(2))
-            .attached_deposit(CREATE_LINK_AMOUNT)
-            .build());
-        let pk = PublicKey::from_str("qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz").unwrap();
-        contract.create_link(pk.clone());
-        contract.remove_link(pk);
-    }
-
-    #[test]
     #[should_panic = "ERR_SALE_NOT_STARTED"]
     fn test_sale_too_early() {
-        let (mut context, mut contract) = contract_with_sale_info(None, 1_000, 1_000_000);
+        let (mut context, mut contract) =
+            contract_with_sale_info(100, 1_000_000_000_100_000_000, 1_000_000_000_500_000_000);
         register_account(&mut context, &mut contract, accounts(2));
         deposit(&mut context, &mut contract, accounts(2));
     }
@@ -504,10 +526,11 @@ mod tests {
     #[test]
     #[should_panic = "ERR_SALE_DONE"]
     fn test_sale_too_late() {
-        let (mut context, mut contract) = contract_with_sale_info(None, 1_000, 1_000_000);
+        let (mut context, mut contract) =
+            contract_with_sale_info(100, 1_000_000_000_100_000_000, 1_000_000_000_500_000_000);
         register_account(&mut context, &mut contract, accounts(2));
         testing_env!(context
-            .block_timestamp(1_000_001)
+            .block_timestamp(1_000_000_000_600_000_000)
             .predecessor_account_id(accounts(1))
             .build());
         contract.ft_on_transfer(
@@ -519,5 +542,172 @@ mod tests {
             })
             .unwrap(),
         );
+    }
+
+    #[test]
+    fn test_update_sale_price() {
+        let (_context, mut contract) = contract_with_sale();
+        contract.update_sale_price(0, U128(1234), U128(12345));
+        assert_eq!(contract.get_sale(0).price.0, 1234);
+        assert_eq!(contract.get_sale(0).max_amount.0, 12345);
+    }
+
+    #[test]
+    fn test_claim_and_refund_available_is_false_by_default() {
+        let (_context, contract) = contract_with_sale();
+        let sale: Sale = contract.sales.get(&0).expect("ERR_NO_SALE").into();
+        assert_eq!(sale.refund_available, false);
+        assert_eq!(sale.claim_available, false);
+    }
+    
+    #[test]
+    #[should_panic = "ERR_MUST_BE_OWNER"]
+    fn create_sale_not_from_owner() {
+        let mut context = VMContextBuilder::new();
+        testing_env!(context.predecessor_account_id(accounts(1)).build());
+        let mut contract = Contract::new(accounts(0), U128(1_000_000), vec![10, 20, 30]);
+        contract.create_sale(correct_input_sale());
+    }
+
+    #[test]
+    #[should_panic = "ERR_MUST_HAVE_MAX_AMOUNT"]
+    fn create_sale_by_amount_with_zero_max_amount() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.max_amount = U128(0);
+        contract.create_sale(sale);
+    }
+    #[test]
+    fn create_sale_by_subscription_with_zero_max_amount() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.max_amount = U128(0);
+        sale.sale_type = SaleType::BySubscription;
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "LIMIT_PER_TRANSACTION_IS_TO_BIG"]
+    fn create_sale_by_amount_with_big_limit_per_transaction() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.limit_per_transaction = U128(sale.max_amount.0 + 100);
+        contract.create_sale(sale);
+    }
+    #[test]
+    fn create_sale_by_subscription_with_big_limit_per_transaction() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.sale_type = SaleType::BySubscription;
+        sale.limit_per_transaction = U128(sale.max_amount.0 + 100);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "LIMIT_PER_TRANSACTION_IS_TO_SMALL"]
+    fn create_sale_with_small_limit_per_transaction() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.limit_per_transaction = U128(sale.min_buy.0 - 1);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "MAX_BUY_IS_LESS_THAN_MIN_BUY"]
+    fn create_sale_with_min_buy_great_than_max() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.min_buy = U128(sale.max_buy.0 + 1);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "ERR_NO_TOKEN_DECIMALS"]
+    fn create_sale_with_no_decimals() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.distribute_token_decimals = None;
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "WRONG_DECIMALS"]
+    fn create_sale_with_zero_decimals() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.distribute_token_decimals = Some(0);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "WRONG_DATES"]
+    fn create_sale_with_wrong_dates() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.end_date = U64(sale.start_date.0 - 100);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "START_DATE_IS_TO_BIG"]
+    fn create_sale_with_big_stat_date() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.start_date = U64(sale.start_date.0 * 10);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "START_DATE_IS_TO_SMALL"]
+    fn create_sale_with_small_stat_date() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.start_date = U64(sale.start_date.0 / 100);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "END_DATE_IS_TO_BIG"]
+    fn create_sale_with_big_end_date() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.end_date = U64(sale.end_date.0 * 10);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "END_DATE_IS_TO_SMALL"]
+    fn create_sale_with_small_end_date() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.end_date = U64(sale.end_date.0 / 100);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "WRONG_MIN_NEAR_DEPOSIT"]
+    fn create_sale_with_no_min_near_deposit() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.min_near_deposit = U128(0);
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    #[should_panic = "NO_STAKING_CONTRACTS"]
+    fn create_sale_with_no_staking_contracts() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.staking_contracts.clear();
+        contract.create_sale(sale);
+    }
+
+    #[test]
+    fn create_sale_without_staking_contracts_and_min_near_deposit() {
+        let mut contract = contract_without_sale();
+        let mut sale = correct_input_sale();
+        sale.min_near_deposit = U128(0);
+        sale.staking_contracts.clear();
+        contract.create_sale(sale);
     }
 }
